@@ -1,0 +1,88 @@
+###############################
+####
+####      Analyse du comportement_Exp daphnies
+####
+###############################
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~Library, Package and WD ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+library(trackdem)
+library(future)
+library(av)
+
+setwd("D:/Assistanat_CR_Behaviour")
+
+#~~~~~~~~~~~~~~~~~~ Convert vidéo to images sequence ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# définir les chemins et les fps voulus !
+av_video_images("D:/Assistanat_CR_Behaviour/vidéos/C1_all.mp4", 
+                destdir = "vidéos/t", 
+                format = "png", fps = 1)
+
+#~~~~~~~~~~~~~~~~~~~~~~ téléchargement des images ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+dir <- "vidéos/t"
+allFullImages <- loadImages (dirPictures=dir,
+                             nImages=1:249) # adapter le nombre d'images max.
+allFullImages # affiche un résumé
+
+plot(allFullImages,frame=15) # affiche une image pour contrôle
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~Suppression du bruit de fond~~~~~~~~~~~~~~~~~~~~~~
+
+#1) Création de l'image bruit de fond
+stillBack <- createBackground(allFullImages,method="mean")
+stillBack # affiche un résumé
+
+plot(stillBack) # affiche une image pour contrôle
+
+#2) Suppression du bruit de fond 
+
+allImages <- subtractBackground(stillBack)
+allImages # affiche un résumé
+
+plot(allImages, frame=15) # affiche une image pour contrôle
+
+#~~~~~~~~~~~~~~~~~~~~ Application du filtre de détection ~~~~~~~~~~~~~~~~~~~~~~~
+
+findThreshold(allImages) # trouver le bon seuil pour "identifyParticules"
+
+#~~~~~~~~~~~~~~~~~~~ Identification des particules mobiles ~~~~~~~~~~~~~~~~~~~~~
+
+partIden <- identifyParticles(allImages,threshold=-0.11,
+                              pixelRange=c(10,500)) # reporter la valeur seuile.
+
+summary(partIden) # les résultat doit retourner le nombre d'induvidu avec une 
+                  # variation de 0
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~ Supression des faux positifs ~~~~~~~~~~~~~~~~~~~~~~~
+
+# N'est pas obligatoire si les conditions en lignes 56-57 sont respectées. 
+
+#manuallySelect(particles = partIden, colorimages = NULL, frames = NULL)
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~ Enregistrement des mouvements ~~~~~~~~~~~~~~~~~~~~~~~
+
+findMaxCost(partIden)
+
+records <- trackParticles(partIden,L=150,R=3) # traque et lie les points. 
+
+# L représente le coût maximale autorisé. À aumgmenter si le suivit est coupé. 
+
+#~~~~~~~~~~~~~~~~~~~~~~ Contrôles des données obtenues ~~~~~~~~~~~~~~~~~~~~~~~~~
+
+summary(records,incThres=1)$N # doit être égal au nombre d'individu
+summary(records,incThres = 1) # résumé des mouvements
+
+plot(records,type="trajectories",incThres=1) # affichage du résultat
+plot(records,type="animation",incThres=1,
+     path="D:/Assistanat_CR_Behaviour/vidéos",
+     libavpath = "D:/Assistanat_CR_Behaviour/libav/usr/bin/avconv.exe") # création vidéo de suivi
+
+#~~~~~~~~~~~~~~~~~~~~~~~ Enregistrement des données ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+resultat <- summary(records, incThres = 20)
+list_data <- Map(as.data.frame, resultat)
+datarbind <- list_data[["particles"]]
+datarbind
+write.csv2(datarbind, file="C1-6.csv", row.names = TRUE)
