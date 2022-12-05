@@ -1,88 +1,310 @@
 ###############################
 ####
-####      Analyse du comportement_Exp daphnies
+####      Analyse du comportement_Exp daphnies sur Rstudio
+####      Auteur-trice : Christophe Reis & Floriane Tisserand
+####
+####
+####      source : 
+####      trajr : McLean DJ, Skowron Volponi MA. trajr: An R package for 
+####              characterisation of animal trajectories. Ethology. 2018;00:1–9. 
+####              https://doi.org/10.1111/eth.12739.
+####      TrackDem : https://github.com/marjoleinbruijning/trackdem
 ####
 ###############################
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~Library, Package and WD ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 library(trackdem)
-library(future)
 library(av)
+library(trajr)
 
-setwd("D:/Assistanat_CR_Behaviour")
+# set le WD
+setwd("C:/Users/d4kro/Desktop/assitanat/assistanat2022/Assistanat_CR_Behaviour")
+
+conc <- c("C1","C2","C3","C4","C5","C6","C7","C8","C9","C10") # liste des conc.
+
+# création de plusieurs vecteurs : seuil; nouveau seuil et Coefficient de variations
+            #  1     2      3      4     5       6    7     8       9     10
+#thres <- c(-0.115,-0.115,-0.085,-0.115,-0.115,-0.18,-0.08,-0.18,-0.115,-0.155) # fps = 0.5
+thres <- c(-0.115,-0.115,-0.15,-0.115,-0.115,-0.19,-0.15,-0.18,-0.18,-0.18) # fps = 1
+new_thres <- c(0,0,0,0,0,0,0,0,0,0) # fps = 1
+coef <- c(1,1,1,1,1,1,1,1,1,1) # doit devenir tous 0 à la fin du code.
+
+
+# telecharge les videos
+list_mov <- list.files(path = "videos/brute/", 
+                       pattern = (".mp4"), 
+                       full.names = TRUE)
+
+# creation tableau all_data pour sauvegarder les données
+data_all = matrix(ncol = 5)
+colnames(data_all) <- c("Concentration","Distance [mm]","Vitesse moyenne [mm/s]","facteur déplacement [-]","temps arret [s]")
 
 #~~~~~~~~~~~~~~~~~~ Convert vidéo to images sequence ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-# définir les chemins et les fps voulus !
-av_video_images("D:/Assistanat_CR_Behaviour/vidéos/C1_all.mp4", 
-                destdir = "vidéos/t", 
-                format = "png", fps = 1)
+for (o in 7:10){
+  
+  print("Helloo")
+  print(as.character(o))
+  # supprime les anciennes images du repertoires
+  file.remove(list.files(path = "videos/images", 
+                         pattern = (".png"), 
+                         full.names = TRUE))
 
-#~~~~~~~~~~~~~~~~~~~~~~ téléchargement des images ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # définir la videos et les fps voulus !
+  av_video_images(list_mov[o], 
+                  destdir = "videos/images", 
+                  format = "png", fps = 1)
 
-dir <- "vidéos/t"
-allFullImages <- loadImages (dirPictures=dir,
-                             nImages=1:249) # adapter le nombre d'images max.
-allFullImages # affiche un résumé
+  #~~~~~~~~~~~~~~~~~~~~~~ téléchargement des images ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-plot(allFullImages,frame=15) # affiche une image pour contrôle
+  compteur <- length(list.files("videos/images")) # compte le nombre d'images
+  allFullImages <- loadImages (dirPictures="videos/images",
+                               nImages=1:compteur)
+  
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~Suppression du bruit de fond~~~~~~~~~~~~~~~~~~~~~~
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~Suppression du bruit de fond~~~~~~~~~~~~~~~~~~~~~~
+  #1) Création de l'image bruit de fond
+  stillBack <- createBackground(allFullImages,method="mean")
 
-#1) Création de l'image bruit de fond
-stillBack <- createBackground(allFullImages,method="mean")
-stillBack # affiche un résumé
+  #2) Suppression du fond 
+  allImages <- subtractBackground(stillBack)
 
-plot(stillBack) # affiche une image pour contrôle
+  #~~~~~~~~~~~~~~~~~~~~ Application du filtre de détection ~~~~~~~~~~~~~~~~~~~~~~~
 
-#2) Suppression du bruit de fond 
+  #findThreshold(allImages) # trouver le bon seuil pour "identifyParticules"
 
-allImages <- subtractBackground(stillBack)
-allImages # affiche un résumé
+  #~~~~~~~~~~~~~~~~~~~ Identification des particules mobiles ~~~~~~~~~~~~~~~~~~~~~
+  
+  partIden <- identifyParticles(allImages,
+                                threshold= thres[o],
+                                pixelRange=c(5,500)) # reporter la valeur seuile.
+  
+  r <- summary(partIden) # sauvegarde le resultat de identifyParticules
+  new_thres[o] <- thres[o] # sauvegarde le seuil pour le changer
+  
+  while(r$particles[3] != 0){ # commemce la boucle avec condition
+    
+    new_thres[o] <- new_thres[o] - 0.005 # Change la valeur seuil
+    
+    print(paste("new threshold is :", new_thres[o])) # affiche le nouveau seuil
+    
+    partIden <- identifyParticles(allImages,
+                                  threshold= new_thres[o],
+                                  pixelRange=c(5,500))
+    
+    print(paste("Standard Deviation is :", r$particles[3])) 
+    # montre le CV. doit être égal à 0, sinon refait la boucle
+    
+    if(new_thres[o] < -0.3){print(paste("Erreur, seuil non trouvé pour la concentration :",o))}
+    if(new_thres[o] < -0.3) break
+  }
+  
+  r <- summary(partIden) # sauvegarde le resultat du nouveau identifyParticules
+  coef[o] <- r$particles[3]
+  
+  print(summary(partIden)) # montre le résultat final pour contrôle
+  
+  # les résultat doit retourner le nombre d'individu 
+  # avec une variation de 0.
 
-plot(allImages, frame=15) # affiche une image pour contrôle
+  #manuallySelect(particles = partIden, colorimages = NULL, frames = NULL)
+  
+  #~~~~~~~~~~~~~~~~~~~~~~~~~ Enregistrement des mouvements ~~~~~~~~~~~~~~~~~~~~~
 
-#~~~~~~~~~~~~~~~~~~~~ Application du filtre de détection ~~~~~~~~~~~~~~~~~~~~~~~
+  records <- trackParticles(partIden,L=200,R=3) # traque et lie les points. 
 
-findThreshold(allImages) # trouver le bon seuil pour "identifyParticules"
+  # L représente le coût maximale autorisé. À aumgmenter si le suivit est coupé. 
 
-#~~~~~~~~~~~~~~~~~~~ Identification des particules mobiles ~~~~~~~~~~~~~~~~~~~~~
+  #~~~~~~~~~~~~~~~~~~~~~~ Contrôles des données obtenues ~~~~~~~~~~~~~~~~~~~~~~~
+  
+  setwd("C:/Users/d4kro/Desktop/assitanat/assistanat2022/Assistanat_CR_Behaviour/resultats/imagesChemin")
+  ext <- ".pdf"
+  name <- "imageSuivis_C"
+  num <- as.character(o)
+  fichier <- paste(name,num,ext,sep="")
+  pdf(file = fichier)
+  par(mfrow=c(1,1))
+  plot(records,type="trajectories",incThres=1) # affichage du résultat
+  dev.off()
+  setwd("C:/Users/d4kro/Desktop/assitanat/assistanat2022/Assistanat_CR_Behaviour/")
+  
+  #plot(records,type="animation",incThres=1,
+       #path="resultats/videoChemin/",
+       #libavpath = "libav/usr/bin/avconv.exe") # création vidéo de suivis
+  
+  #name <- as.character(o) # trasnforme le numero de la video en caractere
+  #ext <- ".mp4" # creation de l'extension
+  #chemin <- "resultats/videoChemin/" # creation du chemin
+  #fichier <- paste(chemin,name,ext,sep="") # merge des trois string
+  
+  #file.rename(from="resultats/videoChemin/animation.mp4", to = fichier) # renome le fichier
+  
+  #~~~~~~~~~~~~~~~~~~~~~~~ Enregistrement des données ~~~~~~~~~~~~~~~~~~~~~~~~~~
+  
+  resultat <- summary(records, incThres =1)
+  list_data <- Map(as.data.frame, resultat) # extrait les donnees
+  Move <- as.data.frame(list_data$particles$`Total movement`) # isole les donnees
+  Move <- Move*4*10/329.38 # conversion pixels en mm et 4 fois plus grand
+  
+  #~~~~~~~~~~~~~~~~~~~~~~ données de déplacements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  
+  nbre <- summary(records,incThres=1)$N # enregistre le nbre d'individus
+  step <- compteur # enregistre le nombre d'images (steps)
+  Place <- records$trackRecord # enregistre les coordonnees x/y
+  
+  # creation des tableau pour sauvegarde des résultats
+  Tab_dis = matrix(ncol = nbre, nrow = step-1) # creation matrice distance
+  Tab_vit = matrix(ncol = nbre, nrow = nbre) # creation d'une matrice vitesse
+  Tab_vit_mean = matrix (ncol = 1, nrow = nbre) # creation d'une matrice vitesse moyenne
+  Tab_amp = matrix(ncol = 1, nrow = nbre) # creation d'une matrice amplitude
+  Tab_arret = matrix(ncol = 1, nrow = nbre) # creation d'une matrice temps d'arret
+  
+  # creation tableau des positions entre 2 images
+  for (j in 1:nbre){
+  
+    for (i in 1:step-1){
+  
+      x1 <- Place[c(j),c(i),c(1)] # coordonnees x pour image
+      x2 <- Place[c(j),c(i+1),c(1)] # coordonnees x pour image +1
+      y1 <- Place[c(j),c(i),c(2)] # coordonnees x pour image
+      y2 <- Place[c(j),c(i+1),c(2)] # coordonnees x pour image +1
+  
+      D2 <- (x1-x2)*(x1-x2)+(y1-y2)*(y1-y2) # calcul de la distance entre 2 points
+      D <- sqrt(D2) # racine carre pour la vrai distance
+  
+      D <- D*4*10/329.38 # conversion 4 fois plus grand et en mm
+      Tab_dis[i,j] <- D # enregistre les donnees de distance dans la matrice
+  
+    }
+  
+  }
 
-partIden <- identifyParticles(allImages,threshold=-0.11,
-                              pixelRange=c(10,500)) # reporter la valeur seuile.
+  # transformation de la matrice en DF
+  Tab_dis <- as.data.frame(Tab_dis)
+  names(Tab_dis) <- c(1:nbre)
+  
+  #~~~~~~~~~~~~~~~~~~ calcul de la vitesse entre deux points ~~~~~~~~~~~~~~~~~~~
+  
+  dt <- ((4*60)+50)/step # calcul du temps entre deux images
+  Tab_vit <- Tab_dis/dt # calcul et enregistrement de la vitesse
 
-summary(partIden) # les résultat doit retourner le nombre d'induvidu avec une 
-                  # variation de 0
+  # plot de la vitesse pour chaque individu
+  
+  setwd("C:/Users/d4kro/Desktop/assitanat/assistanat2022/Assistanat_CR_Behaviour/resultats/plotVitesse")
+  ext <- ".pdf"
+  name <- "plotVitesse_C"
+  num <- as.character(o)
+  fichier <- paste(name,num,ext,sep="")
+  pdf(file = fichier)
+  
+  par(mfrow=c(4,4))
+  for (k in 1 : nbre){
+    
+    ind <- "individu"
+    ind_num <- as.character(k)
+    t <- paste(ind,ind_num,sep="")
+    plot(c(2:step-1),Tab_vit[,k],type="l", main = t, xlab = "Pas de temps", ylab = "vitesse")
+  
+  }
+  dev.off()
+  setwd("C:/Users/d4kro/Desktop/assitanat/assistanat2022/Assistanat_CR_Behaviour/")
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~ Supression des faux positifs ~~~~~~~~~~~~~~~~~~~~~~~
+  # calcul de la vitesse moyenne
+  Tab_vit_mean <- colMeans(Tab_vit)
+  Tab_vit_mean <- as.data.frame(Tab_vit_mean)
+  
+  #~~~~~~~~~~~~~~~~~~~~~~ calcul de l'amplitude maximale ~~~~~~~~~~~~~~~~~~~~~~~
+  
+  for (u in 1:nbre){
+  # place de la mediane
+    Med_x <- median(Place[c(u),,c(1)]) 
+    Med_y <- median(Place[c(u),,c(2)])
+  
+  # coordonnees x,y du trajet
+    x <- Place[c(u),,c(1)]
+    y <- Place[c(u),,c(2)]
+  
+  # point Nord
+    xN <- median(Place[c(u),,c(1)])
+    yN <- max(Place[c(u),,c(2)])
+  
+  # point Sud
+    xS <- median(Place[c(u),,c(1)])
+    yS <- min(Place[c(u),,c(2)])
+  
+  # point Est
+    xE <- min(Place[c(u),,c(1)])
+    yE <- median(Place[c(u),,c(2)])
+  
+  # point Ouest
+    xO <- max(Place[c(u),,c(1)])
+    yO <- median(Place[c(u),,c(2)])
+  
+  # dist. totale
+    tot <- (yN-yS)+(xO-xE)
+  
+  # dist seule
+    distN <- (yN-Med_y)
+    distS <- (Med_y-yS)
+    distE <- (Med_x-xE)
+    distO <- (xO-Med_x)
+  
+  #dist min
+    vect_dist <- c(distE,distN,distO,distS)
+    minDist <- min(vect_dist)
+  
+  # valeur finale
+  
+    fact <- (4*minDist)/tot*100
+    Tab_amp[u] <- fact
+  }
+  
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~ calcul du temps d'arrêt ~~~~~~~~~~~~~~~~~~~~~~~~~~
+  
+  for (l in 1: nbre){
+    
+    # Definition de x, y, et temps
+    coords <- data.frame(x = Place[c(l),,c(1)], # x
+                         y = Place[c(l),,c(2)], # y
+                         time = seq(0.5, 290, by = 290/compteur))# temps
+    
+    # mise à l'échelle de pixel en mètre
+    trj <- TrajFromCoords(coords, spatialUnits = "pixels")
+    
+    #  10 mm (=   1 cm) =  329,38 pixels dans la video
+    trj <- TrajScale(trj, 10 / 329.38, "mm")
+    
+    # analyse de la trajectoire
+    
+    # Calcul des intervals
+    intervals <- TrajSpeedIntervals(trj, slowerThan = 0.005) # en mm/s
+    #plot(intervals)
+    Tab_arret[l] <- sum(intervals$duration)
+    
+  }
+  
+  #~~~~~~~~~~~~~~~~~~~~~~~~Compilation de toutes les données~~~~~~~~~~~~~~~~~~~~
+  
+  data <- cbind(conc[o],Move,Tab_vit_mean, Tab_amp,Tab_arret) # transforme les donnees en DF
+  colnames(data) <- c("Concentration","Distance [mm]","Vitesse moyenne [mm/s]","facteur déplacement [-]","temps arret [s]")
+  data_all <- rbind(data_all,data) # rajoute les données aux tableaux
+  
+  if ( o == 10){
+    
+    data_all <- data_all[-1,] # supprime la premiere ligne (NA)
+    row.names(data_all) <- c(1:length(data_all[,1])) # change les index des lignes
+    
+    # Sortie des variables de controle
+    check.var <- cbind(new_thres,coef)
+    
+    setwd("C:/Users/d4kro/Desktop/assitanat/assistanat2022/Assistanat_CR_Behaviour/resultats")
+    write.csv(data_all,file="donnees_comportements.csv")
+    write.csv(check.var,file="variablesControle.csv")
+    setwd("C:/Users/d4kro/Desktop/assitanat/assistanat2022/Assistanat_CR_Behaviour/")
+    
+  }
 
-# N'est pas obligatoire si les conditions en lignes 56-57 sont respectées. 
+}
 
-#manuallySelect(particles = partIden, colorimages = NULL, frames = NULL)
-
-#~~~~~~~~~~~~~~~~~~~~~~~~~ Enregistrement des mouvements ~~~~~~~~~~~~~~~~~~~~~~~
-
-findMaxCost(partIden)
-
-records <- trackParticles(partIden,L=150,R=3) # traque et lie les points. 
-
-# L représente le coût maximale autorisé. À aumgmenter si le suivit est coupé. 
-
-#~~~~~~~~~~~~~~~~~~~~~~ Contrôles des données obtenues ~~~~~~~~~~~~~~~~~~~~~~~~~
-
-summary(records,incThres=1)$N # doit être égal au nombre d'individu
-summary(records,incThres = 1) # résumé des mouvements
-
-plot(records,type="trajectories",incThres=1) # affichage du résultat
-plot(records,type="animation",incThres=1,
-     path="D:/Assistanat_CR_Behaviour/vidéos",
-     libavpath = "D:/Assistanat_CR_Behaviour/libav/usr/bin/avconv.exe") # création vidéo de suivi
-
-#~~~~~~~~~~~~~~~~~~~~~~~ Enregistrement des données ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-resultat <- summary(records, incThres = 20)
-list_data <- Map(as.data.frame, resultat)
-datarbind <- list_data[["particles"]]
-datarbind
-write.csv2(datarbind, file="C1-6.csv", row.names = TRUE)
+#-------------------------------- fin de script --------------------------------
