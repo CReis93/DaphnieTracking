@@ -3,6 +3,7 @@
 ####      Analyse du comportement_Exp daphnies sur Rstudio
 ####      Auteur-trice : Christophe Reis & Floriane Tisserand
 ####
+####      Version du 20.12.2022
 ####
 ####      source : 
 ####      trajr : McLean DJ, Skowron Volponi MA. trajr: An R package for 
@@ -21,31 +22,45 @@ library(trajr)
 # set le WD
 setwd("C:/Users/d4kro/Desktop/assitanat/assistanat2022/Assistanat_CR_Behaviour")
 
-conc <- c("C1","C2","C3","C4","C5","C6","C7","C8","C9","C10") # liste des conc.
-
-# création de plusieurs vecteurs : seuil; nouveau seuil et Coefficient de variations
-            #  1     2      3      4     5       6    7     8       9     10
-#thres <- c(-0.115,-0.115,-0.085,-0.115,-0.115,-0.18,-0.08,-0.18,-0.115,-0.155) # fps = 0.5
-thres <- c(-0.115,-0.115,-0.15,-0.115,-0.115,-0.19,-0.15,-0.18,-0.18,-0.18) # fps = 1
-new_thres <- c(0,0,0,0,0,0,0,0,0,0) # fps = 1
-coef <- c(1,1,1,1,1,1,1,1,1,1) # doit devenir tous 0 à la fin du code.
+# infos video
+conc <- c("C1","C2","C3","C4","C5","C6","C7","C8","C9","C10") # concentrations
+individus <- c(14,14,8,7,6,9,8,11,14,8) # nbre d'individus
+thres <- c(-0.115,-0.115,-0.115,-0.115,-0.115,-0.115,-0.115,-0.115,-0.115,-0.115) # seuil
+images.manq <- c(0,0,0,0,0,0,0,0,0,0) # vct pour image manquante
 
 
 # telecharge les videos
 list_mov <- list.files(path = "videos/brute/", 
                        pattern = (".mp4"), 
                        full.names = TRUE)
+# nbre de FPS
+FramePS <- 10
 
 # creation tableau all_data pour sauvegarder les données
-data_all = matrix(ncol = 5)
-colnames(data_all) <- c("Concentration","Distance [mm]","Vitesse moyenne [mm/s]","facteur déplacement [-]","temps arret [s]")
+data_all = matrix(ncol = 6)
+colnames(data_all) <- c("Concentration","Distance [mm]","Vitesse moyenne [mm/s]","facteur déplacement [-]","temps arret [s]", "sinuosite")
 
+# supprime les anciens resultats du repertoires
+file.remove(list.files(path = "resultats/imagesChemin", 
+                       pattern = (".pdf"), 
+                       full.names = TRUE))
+file.remove(list.files(path = "resultats/plotVitesse", 
+                       pattern = (".pdf"), 
+                       full.names = TRUE))
+file.remove(list.files(path = "resultats/videoChemin", 
+                       pattern = (".png"), 
+                       full.names = TRUE))
+file.remove(list.files(path = "resultats/", 
+                       pattern = (".csv"), 
+                       full.names = TRUE))
+                       
 #~~~~~~~~~~~~~~~~~~ Convert vidéo to images sequence ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-for (o in 7:10){
+for (o in 1:length(conc)){
   
-  print("Helloo")
+  print("Hello")
   print(as.character(o))
+  
   # supprime les anciennes images du repertoires
   file.remove(list.files(path = "videos/images", 
                          pattern = (".png"), 
@@ -54,7 +69,7 @@ for (o in 7:10){
   # définir la videos et les fps voulus !
   av_video_images(list_mov[o], 
                   destdir = "videos/images", 
-                  format = "png", fps = 1)
+                  format = "png", fps = FramePS)
 
   #~~~~~~~~~~~~~~~~~~~~~~ téléchargement des images ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -77,39 +92,32 @@ for (o in 7:10){
   #~~~~~~~~~~~~~~~~~~~ Identification des particules mobiles ~~~~~~~~~~~~~~~~~~~~~
   
   partIden <- identifyParticles(allImages,
-                                threshold= thres[o],
-                                pixelRange=c(5,500)) # reporter la valeur seuile.
+                                threshold = thres[o],
+                                pixelRange = c(5,500)) # reporter la valeur seuile
   
-  r <- summary(partIden) # sauvegarde le resultat de identifyParticules
-  new_thres[o] <- thres[o] # sauvegarde le seuil pour le changer
+  print(summary(partIden)) # montre le resultat final pour controle
   
-  while(r$particles[3] != 0){ # commemce la boucle avec condition
-    
-    new_thres[o] <- new_thres[o] - 0.005 # Change la valeur seuil
-    
-    print(paste("new threshold is :", new_thres[o])) # affiche le nouveau seuil
-    
-    partIden <- identifyParticles(allImages,
-                                  threshold= new_thres[o],
-                                  pixelRange=c(5,500))
-    
-    print(paste("Standard Deviation is :", r$particles[3])) 
-    # montre le CV. doit être égal à 0, sinon refait la boucle
-    
-    if(new_thres[o] < -0.3){print(paste("Erreur, seuil non trouvé pour la concentration :",o))}
-    if(new_thres[o] < -0.3) break
-  }
-  
-  r <- summary(partIden) # sauvegarde le resultat du nouveau identifyParticules
-  coef[o] <- r$particles[3]
-  
-  print(summary(partIden)) # montre le résultat final pour contrôle
-  
-  # les résultat doit retourner le nombre d'individu 
-  # avec une variation de 0.
+  resume <- summary(partIden) # sauvegarde le resultat de identifyParticules
 
-  #manuallySelect(particles = partIden, colorimages = NULL, frames = NULL)
+  miss <- which(resume$n != individus[o]) # prend les images avec ind. manquant
+  images.manq[o] <- length(miss) # sauvegarde le nbre d'images
+  N.images <- N.images[-c(miss)] # enleves les images
   
+  if(resume$particles[2] != 0){
+
+    # On recommence tout sans les images defectueuses.............................
+  
+    allFullImages <- loadImages(dirPictures = "videos/images",
+                              nImages = N.images)
+    stillBack <- createBackground(allFullImages,method="mean")
+    allImages <- subtractBackground(stillBack)
+    partIden <- identifyParticles(allImages,
+                                threshold = thres[o],
+                                pixelRange = c(5,500)) # reporter la valeur seuile
+    print(summary(partIden)) # montre le resultat final pour controle
+  
+  }
+
   #~~~~~~~~~~~~~~~~~~~~~~~~~ Enregistrement des mouvements ~~~~~~~~~~~~~~~~~~~~~
 
   records <- trackParticles(partIden,L=200,R=3) # traque et lie les points. 
@@ -159,6 +167,7 @@ for (o in 7:10){
   Tab_vit_mean = matrix (ncol = 1, nrow = nbre) # creation d'une matrice vitesse moyenne
   Tab_amp = matrix(ncol = 1, nrow = nbre) # creation d'une matrice amplitude
   Tab_arret = matrix(ncol = 1, nrow = nbre) # creation d'une matrice temps d'arret
+  Tab_sin = matrix(ncol = 1, nrow = nbre) # creation d'une matrice sinuosité
   
   # creation tableau des positions entre 2 images
   for (j in 1:nbre){
@@ -286,23 +295,23 @@ for (o in 7:10){
   
   #~~~~~~~~~~~~~~~~~~~~~~~~Compilation de toutes les données~~~~~~~~~~~~~~~~~~~~
   
-  data <- cbind(conc[o],Move,Tab_vit_mean, Tab_amp,Tab_arret) # transforme les donnees en DF
-  colnames(data) <- c("Concentration","Distance [mm]","Vitesse moyenne [mm/s]","facteur déplacement [-]","temps arret [s]")
+  data <- cbind(conc[o],Move,Tab_vit_mean, Tab_amp,Tab_arret,Tab_sin) # transforme les donnees en DF
+  colnames(data) <- c("Concentration","Distance [mm]","Vitesse moyenne [mm/s]","facteur déplacement [-]","temps arret [s]", "sinuosite")
   data_all <- rbind(data_all,data) # rajoute les données aux tableaux
   
-  if ( o == 10){
+  if ( o == length(conc)){
     
     data_all <- data_all[-1,] # supprime la premiere ligne (NA)
     row.names(data_all) <- c(1:length(data_all[,1])) # change les index des lignes
     
-    # Sortie des variables de controle
-    check.var <- cbind(new_thres,coef)
+    # Sortie images manquante et pourcentage
+    images.manq.pour <- images.manq/compteur*100
+    donne.manq <- cbind(images.manq,images.manq.pour)
     
-    setwd("C:/Users/d4kro/Desktop/assitanat/assistanat2022/Assistanat_CR_Behaviour/resultats")
+    setwd("/work/FAC/FGSE/IDYST/nchevre/comp_daph/resultats")
     write.csv(data_all,file="donnees_comportements.csv")
-    write.csv(check.var,file="variablesControle.csv")
-    setwd("C:/Users/d4kro/Desktop/assitanat/assistanat2022/Assistanat_CR_Behaviour/")
-    
+    write.csv(donne.manq,file="imagesManquante.csv")
+    setwd("/work/FAC/FGSE/IDYST/nchevre/comp_daph/")
   }
 
 }
